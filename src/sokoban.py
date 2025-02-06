@@ -3,12 +3,18 @@ import string
 import threading
 
 from pathlib import Path
+from dataclasses import dataclass
 
 from nethack import NetHack
 from term import Term
 from point import Point
 
-def read_solution(file_name: Path) -> list[tuple[list[list[str]], list[str]]]:
+@dataclass
+class Solution:
+    sl_map: list[list[str]]
+    sl_steps: list[str]
+
+def read_solution(file_name: Path) -> list[Solution]:
     with open(file_name, 'r') as fp:
         s = fp.read().splitlines()
 
@@ -25,7 +31,7 @@ def read_solution(file_name: Path) -> list[tuple[list[list[str]], list[str]]]:
 
     while line < len(s):
         if not s[line]:
-            solutions.append((sl_map, sl_steps))
+            solutions.append(Solution(sl_map, sl_steps))
             sl_map = []
             sl_steps = []
             line += 1
@@ -35,106 +41,107 @@ def read_solution(file_name: Path) -> list[tuple[list[list[str]], list[str]]]:
             sl_steps.append(s[line][map_len + 1:].strip())
         line += 1
 
-    solutions.append((sl_map, sl_steps))
+    solutions.append(Solution(sl_map, sl_steps))
     return solutions
 
-def match_map(solution, nh: NetHack) -> Point | None:
-    sl_map = solution[0][0]
+def match_map(solution: list[Solution], nh: NetHack) -> Point | None:
+    sl_map = solution[0].sl_map
     start = None
 
-    for y, _ in enumerate(sl_map):
-        for x, _ in enumerate(_):
-            if sl_map[y][x] == '@':
+    for y, row in enumerate(sl_map):
+        for x, cell in enumerate(row):
+            if cell == '@':
                 start = nh.pos - Point(x, y)
 
     if not start:
-        return None # can't be?
+        raise ValueError('This cannot be!')
 
-    for y, _ in enumerate(sl_map):
-        for x, _ in enumerate(_):
+    for y, row in enumerate(sl_map):
+        for x, cell in enumerate(row):
             point = Point(x, y) + start
-            if sl_map[y][x] == '#':
+            if cell == '#':
                 if not nh.is_wall(point):
-                    print(start, x, y, nh.at(point), sl_map[y][x])
+                    print(start, x, y, nh.at(point), cell)
                     return None
-            if sl_map[y][x] == '<':
+            elif cell == '<':
                 if nh.at(point) != nh.STAIRS:
-                    print(start, x, y, nh.at(point), sl_map[y][x])
+                    print(start, x, y, nh.at(point), cell)
                     return None
-            if sl_map[y][x] in string.ascii_uppercase:
+            elif cell in string.ascii_uppercase:
                 if nh.at(point) != nh.BOULDER:
-                    print(start, x, y, nh.at(point), sl_map[y][x])
+                    print(start, x, y, nh.at(point), cell)
                     return None
 
     return start
 
 
-def run_solution(solution, nh: NetHack, step: int, start: Point) -> None:
-    sl_map = solution[step][0]
-    sl = solution[step][1]
-    print('>>>>>>>>>>>>>>>>>>>>>>>>>')
-    print(sl)
-    for boulder in sl:
-        char = boulder[0]
-        moves = boulder[2:]
+def run_solution(solutions: list[Solution], nh: NetHack, start: Point) -> None:
+    # pylint: disable=too-many-locals
 
-        b_pos = Point(-1, -1)
+    for solution in solutions:
+        sl_map = solution.sl_map
+        print('>>>>>>>>>>>>>>>>>>>>>>>>>')
+        print(solution.sl_steps)
+        for boulder in solution.sl_steps:
+            char = boulder[0]
+            moves = boulder[2:]
 
-        for y, _ in enumerate(sl_map):
-            for x, _ in enumerate(_):
-                if sl_map[y][x] == char:
-                    b_pos = Point(x, y)
+            b_pos: Point | None = None
 
-        for i, move in enumerate(moves):
-            if move == ' ':
-                continue
+            for y, row in enumerate(sl_map):
+                for x, cell in enumerate(row):
+                    if cell == char:
+                        b_pos = Point(x, y)
+                        break
 
-            dr = nh.DIRECTIONS[move]
-            to = b_pos + dr[1] * (-1)
+            if not b_pos:
+                raise ValueError(f"Can't find boulder {char}")
 
-            print(f'boulder={char} nh.pos={nh.pos} start={start}')
-            print(f'to={to}, b_pos={b_pos}', dr)
-            for s in sl_map:
-                print(''.join(s))
+            for i, move in enumerate(moves):
+                if move == ' ':
+                    continue
 
-            if not nh.go_to(to + start):
-                break # boulder is finished manually or destroyed
-            nh.press(nh.DIRECTIONS[move][0])
-            nh.pos += nh.DIRECTIONS[move][1]
-            sl_map[b_pos.y][b_pos.x] = '.'
-            b_pos += nh.DIRECTIONS[move][1]
-            sl_map[b_pos.y][b_pos.x] = char
-            if not nh.check("Boulder didn't move?"):
-                break # boulder is finished manually or destroyed
+                dr = nh.DIRECTIONS[move]
+                to = b_pos + dr[1] * (-1)
 
-            if (i + 1) < len(moves) and moves[i + 1] == '*':
-                nh.check("Boulder didn't fill the hole?", b_pos + start, nh.EMPTY)
+                print(f'boulder={char} nh.pos={nh.pos} start={start}')
+                print(f'to={to}, b_pos={b_pos}', dr)
+                for s in sl_map:
+                    print(''.join(s))
+
+                if not nh.go_to(to + start):
+                    break # boulder is finished manually or destroyed
+                nh.press(nh.DIRECTIONS[move][0])
+                nh.pos += nh.DIRECTIONS[move][1]
                 sl_map[b_pos.y][b_pos.x] = '.'
-                break
-            if not nh.check("Boulder didn't move?", b_pos + start, nh.BOULDER):
-                break # boulder is finished manually or destroyed
+                b_pos += nh.DIRECTIONS[move][1]
+                sl_map[b_pos.y][b_pos.x] = char
+                if not nh.check("Boulder didn't move?"):
+                    break # boulder is finished manually or destroyed
 
-    step += 1
-    if step < len(solution):
-        run_solution(solution, nh, step, start)
+                if (i + 1) < len(moves) and moves[i + 1] == '*':
+                    nh.check("Boulder didn't fill the hole?", b_pos + start, nh.EMPTY)
+                    sl_map[b_pos.y][b_pos.x] = '.'
+                    break
+                if not nh.check("Boulder didn't move?", b_pos + start, nh.BOULDER):
+                    break # boulder is finished manually or destroyed
 
 
 def solve(nh: NetHack) -> None:
     nh.read_pos()
     print(nh.symbol)
 
-    solutions = (Path(__file__).parents[1] /
-                 Path('res') / Path('sokoban')).glob("solution_*.txt")
+    solutions = (Path(__file__).parents[1] / 'res' / 'sokoban').glob("solution_*.txt")
     good = False
     for file in solutions:
         print(f'Checking solution: {file}')
         solution = read_solution(file)
-        if (start := match_map(solution, nh)):
+        if start := match_map(solution, nh):
             print("Start:", start)
             nh.set_option('runmode', 't')
-            nh.set_option('pile_limit', '1\n')
+            nh.set_option('pile_limit', '2\n')
 
-            run_solution(solution, nh, 0, start)
+            run_solution(solution, nh, start)
             good = True
 
             nh.set_option('runmode', 'w')

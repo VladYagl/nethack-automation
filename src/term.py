@@ -5,14 +5,16 @@ import threading
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final, Iterator, Self
+from typing import Final, Iterator, Self, TypeAlias
 
 from time import sleep
 
 from point import Point
 
-SCREEN_LOG_FIFO: Final[Path] = Path(__file__).parents[1] / Path('tmp/screen_log.fifo')
-SCREEN_LOG_TXT: Final[Path] = Path(__file__).parents[1] / Path('tmp/screen_log.txt')
+Unused: TypeAlias = object  # stable
+
+SCREEN_LOG_FIFO: Final[Path] = Path(__file__).parents[1] / 'tmp/screen_log.fifo'
+SCREEN_LOG_TXT: Final[Path] = Path(__file__).parents[1] / 'tmp/screen_log.txt'
 
 def crange(c1: str, c2: str) -> Iterator[str]:
     for c in range(ord(c1), ord(c2)+1):
@@ -91,7 +93,7 @@ class Glyph:
     char: str = ' '
     attr: Attr = field(default_factory=Attr)
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, str):
             return self.char == other
         elif isinstance(other, Glyph):
@@ -104,7 +106,7 @@ class Glyph:
 
 class Term:
     # pylint: disable=too-many-instance-attributes
-    def __init__(self, logger = logging.getLogger(), fifo: bool = True) -> None:
+    def __init__(self, logger: logging.Logger = logging.getLogger(), fifo: bool = True) -> None:
         self.width = 200
         self.height = 100
         self.glyphs: list[list[Glyph | None]] = [
@@ -136,7 +138,7 @@ class Term:
             self.fp = open(SCREEN_LOG_TXT, 'r', encoding='utf8', newline='')
         return self
 
-    def __exit__(self, exception_type, exception_value, exception_traceback) -> None:
+    def __exit__(self, *exc_info: Unused) -> None:
         self.fp.close()
 
     def __getitem__(self, at: Point) -> None | Glyph:
@@ -392,7 +394,7 @@ class Term:
             self.reading = False
             return c
 
-    def do_yield(self):
+    def do_yield(self) -> None:
         sleep(0.001)
         while self.reading:
             sleep(0.001)

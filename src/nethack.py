@@ -3,8 +3,6 @@ import subprocess
 import re
 import string
 
-from time import sleep
-
 from point import Point
 from term import Term, Glyph, DEC_CHARSET
 
@@ -26,34 +24,37 @@ class NetHack:
         'r': ('l', Point( 1,  0)),
     }
 
-    def __init__(self, term) -> None:
-        self.term: Term = term
+    def __init__(self, term: Term) -> None:
+        self.pos: Point
+        self.symbol: Glyph
+        self.term = term
         self.read_pos()
 
     def read_pos(self) -> None:
         self.term.do_yield()
         self.pos = self.term.cursor - self.START
-        self.symbol = self.term[self.term.cursor]
+        if glyph := self.term[self.term.cursor]:
+            self.symbol = glyph
 
-    def at(self, point) -> Glyph | None:
+    def at(self, point: Point) -> Glyph | None:
         if point.x >= self.WIDTH:
             return None
         if point.y >= self.HEIGHT:
             return None
         return self.term[point + self.START]
 
-    def is_wall(self, point) -> bool:
+    def is_wall(self, point: Point) -> bool:
         glyph = self.at(point)
         for (code, symbol) in DEC_CHARSET.items():
             if glyph and glyph.char == symbol:
                 return code in range(0x6a, 0x79)
         return False
 
-    def print(self):
+    def print(self) -> None:
         for y in range(self.HEIGHT):
             for x in range(self.WIDTH):
-                if self.at(Point(x, y)):
-                    print(self.at(Point(x, y)).char, end='')
+                if glyph := self.at(Point(x, y)):
+                    print(glyph, end='')
                 else:
                     print(' ', end='')
             print()
@@ -68,7 +69,7 @@ class NetHack:
                         return glyph
         return None
 
-    def check(self, msg: str, pos=None, symbol=None):
+    def check(self, msg: str, pos: Point | None = None, symbol: Glyph | None = None) -> bool:
         if not pos:
             pos = self.pos
         if not symbol:
@@ -82,24 +83,24 @@ class NetHack:
                 print(f'{msg}\n{pos}: {self.at(self.pos)} != {symbol}')
                 if input() == 'skip':
                     return False
-                return self.check(pos, symbol)
+                return self.check(msg, pos, symbol)
 
-        if (enemy := self.has_enemies()):
+        if enemy := self.has_enemies():
             input(f'Map has enemies "{enemy}"!')
             return self.check(msg, pos, symbol)
 
         return True
 
-    def PRESS(self, c):
+    def PRESS(self, c: str) -> str:
         return f'screen -x -S "nethack" -X stuff "{c}"'
 
-    def run(self, command, *argv, **kwargs):
-        subprocess.run([command], shell=True, check=True, *argv, **kwargs)
+    def run(self, command: str) -> None:
+        subprocess.run([command], shell=True, check=True)
 
-    def press(self, c):
+    def press(self, c: str) -> None:
         self.run(self.PRESS(c))
 
-    def move_cursor(self, from_point, to_point):
+    def move_cursor(self, from_point: Point, to_point: Point) -> None:
         diff = to_point - from_point
 
         while diff.y != 0:
@@ -118,7 +119,7 @@ class NetHack:
             self.press(self.DIRECTIONS[d][0])
             diff += self.DIRECTIONS[d][1] * (-1)
 
-    def go_to(self, to_point):
+    def go_to(self, to_point: Point) -> bool:
         self.press('-')
         self.press('@')
         self.move_cursor(self.pos, to_point)
@@ -127,7 +128,7 @@ class NetHack:
         self.pos = to_point
         return self.check('Failed travel')
 
-    def set_option(self, option, value):
+    def set_option(self, option: str, value: str) -> None:
         self.press('O')
         page = 1
 
@@ -137,7 +138,7 @@ class NetHack:
                 self.term.do_yield()
 
             for line in self.term.lines():
-                if (m := re.search(fr'([a-zA-Z])\) {option} ', line)):
+                if m := re.search(fr'([a-zA-Z])\) {option} ', line):
                     self.press(m.group(1))
 
             self.press(' ')
