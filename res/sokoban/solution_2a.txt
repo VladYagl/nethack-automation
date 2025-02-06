@@ -60,7 +60,7 @@
 
  ----          ----------- K rruu rdrr rrr*
 --.>--------   |.........| P drru urdr rrrr rr*
-|..........|   |.........| L lllr rrrr rruu rdrr rrrr*
+|..........|   |.........| L lllr rrrr rruu rdrr rrrrr*
 |.A-----.-.|   |.........| I drdd drru urdr rrrr rrr*
 |..|...|CF.|   |....<....| J rrrr dddr ruur drrr rrrr rr*
 |.D.E.B...-|   |.........|
