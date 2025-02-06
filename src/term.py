@@ -99,10 +99,12 @@ class Glyph:
         else:
             return False
 
+    def __str__(self) -> str:
+        return CSI + self.attr.sgr() + 'm' + self.char + CSI + '0m'
 
 class Term:
     # pylint: disable=too-many-instance-attributes
-    def __init__(self, fifo: bool = True) -> None:
+    def __init__(self, logger = logging.getLogger(), fifo: bool = True) -> None:
         self.width = 200
         self.height = 100
         self.glyphs: list[list[Glyph | None]] = [
@@ -122,6 +124,8 @@ class Term:
         self.log = ''
         self.fifo = fifo
         self.stop = False
+        self.logger = logger
+        self.reading = False
 
     def __enter__(self) -> Self:
         # pylint: disable=attribute-defined-outside-init
@@ -144,9 +148,16 @@ class Term:
     def at(self, x: int, y: int) -> None | Glyph:
         return self[Point(x, y)]
 
+    def line(self, y: int) -> str:
+        return ''.join(glyph.char if glyph else ' ' for glyph in self.glyphs[y])
+
+    def lines(self) -> Iterator[str]:
+        for y in range(1, self.maxy):
+            yield self.line(y)
+
     def flush(self) -> None:
         if self.log:
-            logging.info("String: '%s'", self.log)
+            self.logger.info("String: '%s'", self.log)
             self.log = ''
 
     def print(self) -> None:
@@ -165,8 +176,7 @@ class Term:
                 if x == 0:
                     continue
                 if c:
-                    print(CSI + c.attr.sgr() + 'm', end='')
-                    print(c.char, end='')
+                    print(str(c), end='')
                 else:
                     print(CSI + '0m', end='')
                     print(' ', end='')
@@ -220,7 +230,7 @@ class Term:
                 self.log += char
             else:
                 self.flush()
-                logging.info('ORD: %d %s', ord(char), char)
+                self.logger.info('ORD: %d %s', ord(char), char)
                 match ord(char):
                     case 10: # Line Feed
                         self.cursor_dy(1)
@@ -230,7 +240,7 @@ class Term:
                     case 8: # Backspace
                         self.cursor_dx(-1)
                     case _:
-                        logging.error('Unknown ASCII: %d %s', ord(char), char)
+                        self.logger.error('Unknown ASCII: %d %s', ord(char), char)
                         # Read the char anyway
                         self[self.cursor] = Glyph(char, copy.copy(self.attr))
                         self.cursor_dx(1)
@@ -271,34 +281,34 @@ class Term:
     def handle_csi(self, csi: str) -> None:
         match csi[-1]:
             case 'J':
-                match getPs(csi, 0):
+                match self.getPs(csi, 0):
                     case 0:
                         self.clearFrom()
                     case 1:
                         self.clearTo()
                     case 2:
                         # pylint: disable=unnecessary-dunder-call
-                        self.__init__(self.fifo) # type: ignore
+                        self.__init__(self.logger, self.fifo) # type: ignore
                     case _:
-                        logging.error('Unknown CSI: %s', ansitostr(csi))
+                        self.logger.error('Unknown CSI: %s', self.ansitostr(csi))
             case 'H':
-                self.cursor.y, self.cursor.x = getPm(csi, [1, 1])
+                self.cursor.y, self.cursor.x = self.getPm(csi, [1, 1])
             case 'r':
-                self.top, self.bottom = getPm(csi, [1, self.height])
+                self.top, self.bottom = self.getPm(csi, [1, self.height])
             case 'G':
-                self.cursor.x = getPs(csi, 1)
+                self.cursor.x = self.getPs(csi, 1)
             case 'd':
-                self.cursor.y = getPs(csi, 1)
+                self.cursor.y = self.getPs(csi, 1)
             case 'A':
-                self.cursor_dy(-getPs(csi, 1))
+                self.cursor_dy(-self.getPs(csi, 1))
             case 'B':
-                self.cursor_dy(getPs(csi, 1))
+                self.cursor_dy(self.getPs(csi, 1))
             case 'C':
-                self.cursor_dx(getPs(csi, 1))
+                self.cursor_dx(self.getPs(csi, 1))
             case 'D':
-                self.cursor_dx(-getPs(csi, 1))
+                self.cursor_dx(-self.getPs(csi, 1))
             case 'K':
-                match getPs(csi, 0):
+                match self.getPs(csi, 0):
                     case 0:
                         for x in range(self.cursor.x, self.width):
                             self.glyphs[self.cursor.y][x] = Glyph()
@@ -309,12 +319,12 @@ class Term:
                         for x in range(0, self.width):
                             self.glyphs[self.cursor.y][x] = Glyph()
             case 'T':
-                self.scroll(-getPs(csi, 1))
+                self.scroll(-self.getPs(csi, 1))
             case 'S':
-                self.scroll(getPs(csi, 1))
+                self.scroll(self.getPs(csi, 1))
             case 'X':
                 tx = self.cursor.x
-                for _ in range(getPs(csi, 1)):
+                for _ in range(self.getPs(csi, 1)):
                     self.glyphs[self.cursor.y][tx] = Glyph()
                     tx += 1
             case 'm':
@@ -327,8 +337,8 @@ class Term:
                     try:
                         at = int(atc)
                     except ValueError:
-                        logging.warning('Unsupported text attribute: %d %s',
-                                        atc, ansitostr(csi))
+                        self.logger.warning('Unsupported text attribute: %d %s',
+                                        atc, self.ansitostr(csi))
                         continue
                     match at:
                         case 0:
@@ -346,8 +356,8 @@ class Term:
                         case at if at in range(100, 108):
                             self.attr.bg_color = int(at) - 90
                         case _:
-                            logging.warning('Unsupported text attribute: %d %s',
-                                            at, ansitostr(csi))
+                            self.logger.warning('Unsupported text attribute: %d %s',
+                                            at, self.ansitostr(csi))
             case 'l' | 'h':
                 # Set various terminal attributes
                 match csi[2: -1]:
@@ -356,27 +366,36 @@ class Term:
                     case '?7':
                         self.wrap = csi[-1] == 'h'
                     case s if s in ['?12', '?1', '?1049', '4', '?1034', '?2004']:
-                        logging.warning('Unsupported Terminal attribute: %s',
-                                        ansitostr(csi))
+                        self.logger.warning('Unsupported Terminal attribute: %s',
+                                        self.ansitostr(csi))
                     case _:
-                        logging.error('Unknown Terminal attribute: %s',
-                                      ansitostr(csi))
+                        self.logger.error('Unknown Terminal attribute: %s',
+                                      self.ansitostr(csi))
             case 't':
                 # IDK, this is some bullshit
-                logging.warning('Unsupported CSI: %s', ansitostr(csi))
+                self.logger.warning('Unsupported CSI: %s', self.ansitostr(csi))
             case _:
-                logging.error('Unknown CSI: %s', ansitostr(csi))
+                self.logger.error('Unknown CSI: %s', self.ansitostr(csi))
 
     def read(self) -> str:
         if self.fifo:
+            self.reading = False
             while not (c := self.fp.read(1)):
                 pass
+            self.reading = True
             return c
         else:
+            self.reading = True
             if not (c := self.fp.read(1)):
                 self.stop = True
                 return ESC
+            self.reading = False
             return c
+
+    def do_yield(self):
+        sleep(0.001)
+        while self.reading:
+            sleep(0.001)
 
     def start(self) -> None:
         with self as x:
@@ -414,8 +433,8 @@ class Term:
                             case 'B':
                                 self.charset = 'USASCII'
                             case _:
-                                logging.error('Charset: %s %s', s[-1],
-                                              ansitostr(s))
+                                self.logger.error('Charset: %s %s', s[-1],
+                                                  self.ansitostr(s))
                     case 'M': # Move up
                         self.cursor_dy(-1)
                     case '7': # Save cursor
@@ -423,29 +442,29 @@ class Term:
                     case '8': # Restore cursor
                         self.cursor = self.save_cursor or self.cursor
                     case '=' | '>' | ']':
-                        logging.warning('Unsupported ANSI: %s', ansitostr(s))
+                        self.logger.warning('Unsupported ANSI: %s', self.ansitostr(s))
                     case _:
-                        logging.error('Unknown ANSI: %s', ansitostr(s))
+                        self.logger.error('Unknown ANSI: %s', self.ansitostr(s))
 
-                logging.info('ANSI: %s', ansitostr(s))
+                self.logger.info('ANSI: %s', self.ansitostr(s))
 
-def ansitostr(csi: str) -> str:
-    return csi.replace(ESC, "ESC")
+    def ansitostr(self, csi: str) -> str:
+        return csi.replace(ESC, "ESC")
 
-def getPm(csi: str, default: list[int]) -> Iterator[int]:
-    if not csi[2: -1]:
-        yield from default
-    else:
-        for x in csi[2: -1].split(';'):
-            try:
-                yield int(x)
-            except ValueError:
-                logging.error('Unsupported Ps: %s %s', x, ansitostr(csi))
-                yield from default
-                break
+    def getPm(self, csi: str, default: list[int]) -> Iterator[int]:
+        if not csi[2: -1]:
+            yield from default
+        else:
+            for x in csi[2: -1].split(';'):
+                try:
+                    yield int(x)
+                except ValueError:
+                    self.logger.error('Unsupported Ps: %s %s', x, self.ansitostr(csi))
+                    yield from default
+                    break
 
-def getPs(csi: str, default: int) -> int:
-    return next(getPm(csi, [default]))
+    def getPs(self, csi: str, default: int) -> int:
+        return next(self.getPm(csi, [default]))
 
 def test() -> None:
     logging.basicConfig(

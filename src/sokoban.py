@@ -104,14 +104,14 @@ def run_solution(solution, nh: NetHack, step: int, start: Point) -> None:
             sl_map[b_pos.y][b_pos.x] = '.'
             b_pos += nh.DIRECTIONS[move][1]
             sl_map[b_pos.y][b_pos.x] = char
-            if not nh.check():
+            if not nh.check("Boulder didn't move?"):
                 break # boulder is finished manually or destroyed
 
             if (i + 1) < len(moves) and moves[i + 1] == '*':
-                nh.check(b_pos + start, nh.EMPTY)
+                nh.check("Boulder didn't fill the hole?", b_pos + start, nh.EMPTY)
                 sl_map[b_pos.y][b_pos.x] = '.'
                 break
-            if not nh.check(b_pos + start, nh.BOULDER):
+            if not nh.check("Boulder didn't move?", b_pos + start, nh.BOULDER):
                 break # boulder is finished manually or destroyed
 
     step += 1
@@ -120,30 +120,33 @@ def run_solution(solution, nh: NetHack, step: int, start: Point) -> None:
 
 
 def solve(nh: NetHack) -> None:
+    nh.read_pos()
+    print(nh.symbol)
+
     solutions = (Path(__file__).parents[1] /
-                 Path('res/sokoban/.txt')).glob("solution_*.txt")
+                 Path('res') / Path('sokoban')).glob("solution_*.txt")
     good = False
     for file in solutions:
         print(f'Checking solution: {file}')
         solution = read_solution(file)
         if (start := match_map(solution, nh)):
             print("Start:", start)
+            nh.set_option('runmode', 't')
+            nh.set_option('pile_limit', '1\n')
+
             run_solution(solution, nh, 0, start)
             good = True
+
+            nh.set_option('runmode', 'w')
+            nh.set_option('pile_limit', '0\n')
             break
 
     if not good:
         print("Sorry, I couldn't match any solutions")
 
-def test() -> None:
-    logging.basicConfig(
-        filename='log.txt',
-        filemode='w',
-        level=logging.DEBUG
-    )
 
-    # term = Term(fifo=False)
-    # term.start()
+def test() -> None:
+    logging.getLogger().addHandler(logging.NullHandler())
 
     term = Term(fifo=True)
     t1 = threading.Thread(target=term.start, args=(), daemon=True)
@@ -153,10 +156,10 @@ def test() -> None:
 
     input('Waiting...')
 
-    nh.read_pos()
     solve(nh)
     nh.print()
     print(nh.pos)
 
+    input('Done!')
 
 test()

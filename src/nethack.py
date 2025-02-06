@@ -1,12 +1,12 @@
-import threading
 import logging
 import subprocess
+import re
 import string
+
+from time import sleep
 
 from point import Point
 from term import Term, Glyph, DEC_CHARSET
-
-from time import sleep
 
 class NetHack:
     WIDTH = 80
@@ -31,6 +31,7 @@ class NetHack:
         self.read_pos()
 
     def read_pos(self) -> None:
+        self.term.do_yield()
         self.pos = self.term.cursor - self.START
         self.symbol = self.term[self.term.cursor]
 
@@ -57,22 +58,17 @@ class NetHack:
                     print(' ', end='')
             print()
 
-    def has_enemies_impl(self) -> bool:
+    def has_enemies(self) -> Glyph | None:
+        self.term.do_yield()
         for y in range(self.HEIGHT):
             for x in range(self.WIDTH):
                 if Point(x, y) != self.pos:
                     glyph = self.at(Point(x, y))
                     if glyph and glyph.char in self.ENEMIES:
-                        return True
-        return False
+                        return glyph
+        return None
 
-    def has_enemies(self) -> bool:
-        if self.has_enemies_impl():
-            sleep(0.02)
-            return self.has_enemies_impl()
-        return False
-
-    def check(self, pos=None, symbol=None):
+    def check(self, msg: str, pos=None, symbol=None):
         if not pos:
             pos = self.pos
         if not symbol:
@@ -81,16 +77,16 @@ class NetHack:
         cnt = 0
         while self.at(self.pos) != self.symbol:
             cnt += 1
-            sleep(0.001)
-            if cnt > 5000:
-                print(f'{pos}: {self.at(self.pos)} != {symbol}')
+            self.term.do_yield()
+            if cnt > 2000:
+                print(f'{msg}\n{pos}: {self.at(self.pos)} != {symbol}')
                 if input() == 'skip':
                     return False
                 return self.check(pos, symbol)
 
-        if self.has_enemies():
-            input('Map has enemies!')
-            return self.check(pos, symbol)
+        if (enemy := self.has_enemies()):
+            input(f'Map has enemies "{enemy}"!')
+            return self.check(msg, pos, symbol)
 
         return True
 
@@ -99,7 +95,6 @@ class NetHack:
 
     def run(self, command, *argv, **kwargs):
         subprocess.run([command], shell=True, check=True, *argv, **kwargs)
-        # print(command)
 
     def press(self, c):
         self.run(self.PRESS(c))
@@ -130,7 +125,27 @@ class NetHack:
         self.press('.')
 
         self.pos = to_point
-        return self.check()
+        return self.check('Failed travel')
+
+    def set_option(self, option, value):
+        self.press('O')
+        page = 1
+
+        while True:
+            while not (last := re.search(fr'\(Page {page} of (\d)\)',
+                                         self.term.line(self.term.maxy - 1))):
+                self.term.do_yield()
+
+            for line in self.term.lines():
+                if (m := re.search(fr'([a-zA-Z])\) {option} ', line)):
+                    self.press(m.group(1))
+
+            self.press(' ')
+            if int(last.group(1)) == page:
+                break
+            page += 1
+
+        self.press(value)
 
 def test() -> None:
     logging.basicConfig(
