@@ -1,13 +1,14 @@
 import logging
-import glob
 import string
 import threading
+
+from pathlib import Path
 
 from nethack import NetHack
 from term import Term
 from point import Point
 
-def read_solution(file_name: str) -> list[tuple[list[list[str]], list[str]]]:
+def read_solution(file_name: Path) -> list[tuple[list[list[str]], list[str]]]:
     with open(file_name, 'r') as fp:
         s = fp.read().splitlines()
 
@@ -119,7 +120,8 @@ def run_solution(solution, nh: NetHack, step: int, start: Point) -> None:
 
 
 def solve(nh: NetHack) -> None:
-    solutions = glob.glob("../res/sokoban/solution_*.txt")
+    solutions = (Path(__file__).parents[1] /
+                 Path('res/sokoban/.txt')).glob("solution_*.txt")
     good = False
     for file in solutions:
         print(f'Checking solution: {file}')
