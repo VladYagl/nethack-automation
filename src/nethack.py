@@ -3,8 +3,12 @@ import subprocess
 import re
 import string
 
+from threading import Condition
+
 from point import Point
 from term import Term, Glyph, DEC_CHARSET
+import keyboard
+from keyboard import Keyboard
 
 class NetHack:
     WIDTH = 80
@@ -24,11 +28,26 @@ class NetHack:
         'r': ('l', Point( 1,  0)),
     }
 
-    def __init__(self, term: Term) -> None:
+    def __init__(self, term: Term, kb: Keyboard) -> None:
         self.pos: Point
         self.symbol: Glyph
         self.term = term
+        self.keyboard = kb
+        self.condition = Condition()
+        self.skip = False
         self.read_pos()
+
+        def handle_keys(key: str, state: keyboard.State) -> None:
+            match (key, state):
+                case ('Return', keyboard.Ctrl):
+                    with self.condition:
+                        self.condition.notify_all()
+                case ('Return', keyboard.Alt):
+                    with self.condition:
+                        self.skip = True
+                        self.condition.notify_all()
+
+        self.keyboard.add_callback(handle_keys)
 
     def read_pos(self) -> None:
         self.term.do_yield()
@@ -69,6 +88,12 @@ class NetHack:
                         return glyph
         return None
 
+    def wait(self) -> bool:
+        with self.condition:
+            self.skip = False
+            self.condition.wait()
+            return not self.skip
+
     def check(self, msg: str, pos: Point | None = None, symbol: Glyph | None = None) -> bool:
         if not pos:
             pos = self.pos
@@ -81,12 +106,13 @@ class NetHack:
             self.term.do_yield()
             if cnt > 2000:
                 print(f'{msg}\n{pos}: {self.at(self.pos)} != {symbol}')
-                if input() == 'skip':
+                if not self.wait():
                     return False
                 return self.check(msg, pos, symbol)
 
         if enemy := self.has_enemies():
-            input(f'Map has enemies "{enemy}"!')
+            print(f'Map has enemies "{enemy}"!')
+            self.wait()
             return self.check(msg, pos, symbol)
 
         return True
@@ -157,8 +183,9 @@ def test() -> None:
 
     term = Term(fifo=False)
     term.start()
+    kb = Keyboard()
 
-    nh = NetHack(term)
+    nh = NetHack(term, kb)
     nh.print()
 
 

@@ -5,6 +5,7 @@ import threading
 from pathlib import Path
 from dataclasses import dataclass
 
+from keyboard import Keyboard
 from nethack import NetHack
 from term import Term
 from point import Point
@@ -159,7 +160,8 @@ def test() -> None:
     t1 = threading.Thread(target=term.start, args=(), daemon=True)
     t1.start()
 
-    nh = NetHack(term)
+    kb = Keyboard()
+    nh = NetHack(term, kb)
 
     input('Waiting...')
 
@@ -169,4 +171,5 @@ def test() -> None:
 
     input('Done!')
 
-test()
+if __name__ == '__main__':
+    test()
