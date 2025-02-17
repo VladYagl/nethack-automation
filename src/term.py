@@ -5,7 +5,7 @@ import threading
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final, Iterator, Self, TypeAlias
+from typing import Final, Iterator, Self, TypeAlias, TextIO
 
 from time import sleep
 
@@ -107,6 +107,10 @@ class Glyph:
 class Term:
     # pylint: disable=too-many-instance-attributes
     def __init__(self, logger: logging.Logger = logging.getLogger(), fifo: bool = True) -> None:
+        self.redraw: threading.Condition
+        self.idx: int
+        self.fp: TextIO
+
         self.width = 200
         self.height = 100
         self.glyphs: list[list[Glyph | None]] = [
@@ -130,7 +134,7 @@ class Term:
         self.reading = False
 
     def __enter__(self) -> Self:
-        # pylint: disable=attribute-defined-outside-init
+        self.redraw = threading.Condition()
         self.idx = 0
         if self.fifo:
             self.fp = open(SCREEN_LOG_FIFO, 'r', encoding='utf8', newline='')
@@ -365,6 +369,9 @@ class Term:
                 match csi[2: -1]:
                     case '?25':
                         self.show_cursor = csi[-1] == 'h'
+                        if csi[-1] == 'h':
+                            with self.redraw:
+                                self.redraw.notify_all()
                     case '?7':
                         self.wrap = csi[-1] == 'h'
                     case s if s in ['?12', '?1', '?1049', '4', '?1034', '?2004']:

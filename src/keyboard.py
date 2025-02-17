@@ -1,6 +1,7 @@
 # mypy: disable-error-code="misc"
 
 import threading
+import queue
 
 from typing import Callable
 from dataclasses import dataclass
@@ -40,6 +41,7 @@ class Keyboard:
         self.record_dpy = display.Display()
         self.callbacks: list[Callable[[str, State]]] = []
         self.events: dict[tuple[str, State], threading.Event] = {}
+        self.queue: queue.Queue[tuple[str, State]] = queue.Queue()
 
         # Check if the extension is present
         if not self.record_dpy.has_extension('RECORD'):
@@ -99,6 +101,7 @@ class Keyboard:
                     callback(key, state)
                 if ev := self.events.get((key, state)):
                     ev.set()
+                self.queue.put_nowait((key, state))
 
     def start(self) -> None:
         # Enable the context; this only returns after a call to
@@ -115,6 +118,8 @@ class Keyboard:
         event.wait()
         self.events.pop((key, state))
 
+    def next(self) -> tuple[str, State]:
+        return self.queue.get(block = True)
 
 if __name__ == '__main__':
     kb = Keyboard()

@@ -16,3 +16,6 @@ class Point:
 
     def __repr__(self) -> str:
         return f'({self.x}; {self.y})'
+
+    def __hash__(self) -> int:
+        return hash(self.x) + hash(self.y)

@@ -129,6 +129,7 @@ def run_solution(solutions: list[Solution], nh: NetHack, start: Point) -> None:
 
 
 def solve(nh: NetHack) -> None:
+    nh.term.do_yield()
     nh.read_pos()
     print(nh.symbol)
 

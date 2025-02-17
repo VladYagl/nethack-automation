@@ -17,9 +17,12 @@ def main() -> None:
         Path(__file__).parents[1] / 'tmp' / 'term_log.txt',
         mode='w'
     ))
+    # logger.setLevel(logging.INFO)
+    # logger.addHandler(logging.StreamHandler())
 
     term = Term(logger, fifo=True)
     kb = Keyboard()
+    nh = NetHack(term, kb)
 
     t1 = Thread(target=term.start, args=(), daemon=True)
     t1.start()
@@ -27,19 +30,19 @@ def main() -> None:
     t2 = Thread(target=kb.start, args=(), daemon=True)
     t2.start()
 
-    nh = NetHack(term, kb)
+    t3 = Thread(target=nh.follow, args=(), daemon=True)
+    t3.start()
 
-    def handle_keys(key: str, state: keyboard.State) -> None:
-        # mypy: disable-error-code="misc"
+    while True:
+        key, state = kb.next()
         match (key, state):
             case ('s', keyboard.Ctrl):
                 if nh:
-                    nhl = [nh]
-                    Thread(target=sokoban.solve, args=nhl, daemon=True).start()
-
-    kb.add_callback(handle_keys)
-
-    kb.wait('Escape', keyboard.Ctrl)
-    # kb.start()
+                    sokoban.solve(nh)
+            case ('space', keyboard.Shift):
+                if nh:
+                    nh.start_explore()
+            case ('Escape', keyboard.Ctrl):
+                break
 
 main()
